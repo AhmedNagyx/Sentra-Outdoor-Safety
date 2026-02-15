@@ -1,0 +1,36 @@
+## Visual Studio & .NET
+bin/
+obj/
+.vs/
+*.user
+*.userosscache
+*.suo
+*.cache
+*.log
+
+## NuGet
+packages/
+*.nupkg
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+## User-specific files
+appsettings.Development.json
+launchSettings.json
+
+## Database
+*.mdf
+*.ldf
+
+## IDE
+.idea/
+*.swp
+*.swo
+
+## OS files
+.DS_Store
+Thumbs.db
