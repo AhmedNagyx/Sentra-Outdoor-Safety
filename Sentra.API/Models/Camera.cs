@@ -25,14 +25,24 @@ namespace Sentra.API.Models
 
         [Required]
         [MaxLength(20)]
-        public string Status { get; set; } = "Active"; // "Active", "Inactive", "Offline"
+        [RegularExpression("^(Active|Inactive|Offline)$",
+            ErrorMessage = "Status must be Active, Inactive, or Offline")]
+        public string Status { get; set; } = CameraStatus.Active;
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public bool IsDeleted { get; set; } = false; // soft delete
 
+        public DateTime CreatedAt { get; set; } // set by DB
         public DateTime? LastActiveAt { get; set; }
 
-        // Navigation properties
+        // Navigation
         public User User { get; set; } = null!;
         public ICollection<Incident> Incidents { get; set; } = new List<Incident>();
+    }
+
+    public static class CameraStatus
+    {
+        public const string Active = "Active";
+        public const string Inactive = "Inactive";
+        public const string Offline = "Offline";
     }
 }

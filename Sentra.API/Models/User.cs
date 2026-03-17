@@ -21,15 +21,21 @@ namespace Sentra.API.Models
 
         [Required]
         [MaxLength(20)]
-        public string Role { get; set; } = "Resident"; // "Admin" or "Resident"
+        [RegularExpression("^(Resident)$", ErrorMessage = "Invalid role")] // ← ADD THIS
+        public string Role { get; set; } = UserRoles.Resident;
 
-        public string? FCMToken { get; set; } // For push notifications
+        [MaxLength(300)]
+        public string? FCMToken { get; set; }
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
+        public DateTime CreatedAt { get; set; }
         public DateTime? LastLoginAt { get; set; }
 
-        // Navigation property - One User has Many Cameras
+        // Navigation
         public ICollection<Camera> Cameras { get; set; } = new List<Camera>();
+    }
+
+    public static class UserRoles
+    {
+        public const string Resident = "Resident";
     }
 }

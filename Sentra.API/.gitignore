@@ -19,12 +19,26 @@ x64/
 x86/
 
 ## User-specific files
+appsettings.json
 appsettings.Development.json
+appsettings.Production.json
 launchSettings.json
+
+## Secrets & Environment
+.env
+.env.production
+.env.staging
 
 ## Database
 *.mdf
 *.ldf
+
+## Test Results
+TestResults/
+coverage/
+
+## Published Output
+publish/
 
 ## IDE
 .idea/

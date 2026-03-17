@@ -20,18 +20,36 @@ namespace Sentra.API.Models
 
         [Required]
         [MaxLength(20)]
-        public string Channel { get; set; } = "FCM"; // "FCM", "SignalR", "Email"
+        [RegularExpression("^(FCM|SignalR|Email)$",
+            ErrorMessage = "Channel must be FCM, SignalR, or Email")]
+        public string Channel { get; set; } = AlertChannel.FCM;
 
         [Required]
         [MaxLength(20)]
-        public string DeliveryStatus { get; set; } = "Pending"; // "Pending", "Sent", "Delivered", "Failed"
+        [RegularExpression("^(Pending|Sent|Delivered|Failed)$",
+            ErrorMessage = "Invalid delivery status")]
+        public string DeliveryStatus { get; set; } = AlertDeliveryStatus.Pending;
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
+        public DateTime CreatedAt { get; set; } // set by DB
         public DateTime? DeliveredAt { get; set; }
 
-        // Navigation properties
+        // Navigation
         public Incident Incident { get; set; } = null!;
         public User User { get; set; } = null!;
+    }
+
+    public static class AlertChannel
+    {
+        public const string FCM = "FCM";
+        public const string SignalR = "SignalR";
+        public const string Email = "Email";
+    }
+
+    public static class AlertDeliveryStatus
+    {
+        public const string Pending = "Pending";
+        public const string Sent = "Sent";
+        public const string Delivered = "Delivered";
+        public const string Failed = "Failed";
     }
 }

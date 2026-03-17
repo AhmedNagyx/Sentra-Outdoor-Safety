@@ -13,13 +13,15 @@ namespace Sentra.API.Models
 
         [Required]
         [MaxLength(50)]
-        public string Type { get; set; } = string.Empty; // "Fire", "Violence", "Accident"
+        [RegularExpression("^(Fire|Violence|Accident)$",
+            ErrorMessage = "Type must be Fire, Violence, or Accident")]
+        public string Type { get; set; } = string.Empty;
 
         [Required]
         [Range(0.0, 1.0)]
         public double ConfidenceScore { get; set; }
 
-        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        public DateTime Timestamp { get; set; } // set by DB
 
         [MaxLength(500)]
         public string? SnapshotPath { get; set; }
@@ -29,18 +31,37 @@ namespace Sentra.API.Models
 
         [Required]
         [MaxLength(20)]
-        public string Status { get; set; } = "Pending"; // "Pending", "Verified", "FalseAlarm", "Resolved"
+        [RegularExpression("^(Pending|Verified|FalseAlarm|Resolved)$",
+            ErrorMessage = "Invalid status value")]
+        public string Status { get; set; } = IncidentStatus.Pending;
+
+        [MaxLength(50)]
+        public string? DetectedBy { get; set; } // "FireModel", "ViolenceModel", "AccidentModel"
 
         public DateTime? ResolvedAt { get; set; }
-
         public int? ResolvedByUserId { get; set; }
 
-        // Navigation properties
+        // Navigation
         public Camera Camera { get; set; } = null!;
 
         [ForeignKey("ResolvedByUserId")]
         public User? ResolvedByUser { get; set; }
 
         public ICollection<Alert> Alerts { get; set; } = new List<Alert>();
+    }
+
+    public static class IncidentStatus
+    {
+        public const string Pending = "Pending";
+        public const string Verified = "Verified";
+        public const string FalseAlarm = "FalseAlarm";
+        public const string Resolved = "Resolved";
+    }
+
+    public static class IncidentType
+    {
+        public const string Fire = "Fire";
+        public const string Violence = "Violence";
+        public const string Accident = "Accident";
     }
 }

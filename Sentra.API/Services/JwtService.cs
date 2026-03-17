@@ -1,34 +1,32 @@
 ﻿using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Sentra.API.Models;
 
-public class JwtService
+namespace Sentra.API.Services
 {
-    private readonly IConfiguration _config;
-
-    public JwtService(IConfiguration config)
+    public class JwtService : IJwtService
     {
-        _config = config;
-    }
+        private readonly IConfiguration _config;
 
-    public string Generate(User user)
-    {
-        var jwt = _config.GetSection("JwtSettings");
+        public JwtService(IConfiguration config)
+        {
+            _config = config;
+        }
 
-        var secret = jwt["SecretKey"]
-            ?? throw new Exception("JwtSettings:SecretKey missing");
+        public string GenerateAccessToken(User user)
+        {
+            var jwt = _config.GetSection("JwtSettings");
 
-        var key = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(secret)
-        );
+            var secret = jwt["SecretKey"]
+                ?? throw new Exception("JwtSettings:SecretKey missing");
 
-        var creds = new SigningCredentials(
-            key, SecurityAlgorithms.HmacSha256
-        );
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var claims = new List<Claim>
+            var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
             new Claim(ClaimTypes.Email, user.Email),
@@ -36,18 +34,26 @@ public class JwtService
             new Claim("name", user.Name)
         };
 
-        var minutes = int.Parse(
-            jwt["AccessTokenExpirationMinutes"] ?? "60"
-        );
+            // Safe parse with fallback
+            var minutes = int.TryParse(
+                jwt["AccessTokenExpirationMinutes"], out var m) ? m : 60;
 
-        var token = new JwtSecurityToken(
-            issuer: jwt["Issuer"],
-            audience: jwt["Audience"],
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(minutes),
-            signingCredentials: creds
-        );
+            var token = new JwtSecurityToken(
+                issuer: jwt["Issuer"],
+                audience: jwt["Audience"],
+                claims: claims,
+                expires: DateTime.UtcNow.AddMinutes(minutes),
+                signingCredentials: creds
+            );
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        public string GenerateRefreshToken()
+        {
+            // Cryptographically secure random token
+            var bytes = RandomNumberGenerator.GetBytes(64);
+            return Convert.ToBase64String(bytes);
+        }
     }
 }
