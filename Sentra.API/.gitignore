@@ -48,3 +48,15 @@ publish/
 ## OS files
 .DS_Store
 Thumbs.db
+
+
+# Secrets
+appsettings.json
+appsettings.Production.json
+appsettings.Development.json
+.env
+.env.production
+.env.staging
+
+# Firebase
+*firebase-credentials*.json

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Sentra.API.Data;
 using Sentra.API.Models;
 using Sentra.API.Models.DTOs;
+using Sentra.API.Services;
 using System.Security.Claims;
 
 namespace Sentra.API.Controllers
@@ -13,10 +14,14 @@ namespace Sentra.API.Controllers
     public class IncidentsController : ControllerBase
     {
         private readonly SentraDbContext _db;
+        private readonly INotificationService _notifications;
 
-        public IncidentsController(SentraDbContext db)
+        public IncidentsController(
+            SentraDbContext db,
+            INotificationService notifications)
         {
             _db = db;
+            _notifications = notifications;
         }
 
         private int GetUserId() =>
@@ -24,8 +29,6 @@ namespace Sentra.API.Controllers
 
         // ==============================================
         // POST /api/incidents
-        // Called by AI service when incident detected
-        // Protected by API Key middleware
         // ==============================================
         [HttpPost]
         [AllowAnonymous]
@@ -34,12 +37,15 @@ namespace Sentra.API.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
+            // Load camera + owner in one query
             var camera = await _db.Cameras
+                .Include(c => c.User) // need FCMToken + UserId
                 .FirstOrDefaultAsync(c => c.CameraId == dto.CameraId);
 
             if (camera == null)
                 return NotFound(new { message = $"Camera {dto.CameraId} not found" });
 
+            // Save incident
             var incident = new Incident
             {
                 CameraId = dto.CameraId,
@@ -55,18 +61,49 @@ namespace Sentra.API.Controllers
             _db.Incidents.Add(incident);
             await _db.SaveChangesAsync();
 
-            // Create alert for camera owner
+            // Save alert record
             var alert = new Alert
             {
                 IncidentId = incident.IncidentId,
                 UserId = camera.UserId,
-                Message = $"{dto.Type} detected at {camera.Name} with {dto.ConfidenceScore:P0} confidence",
+                Message = $"{dto.Type} detected at {camera.Name} " +
+                          $"with {dto.ConfidenceScore:P0} confidence",
                 Channel = AlertChannel.FCM,
                 DeliveryStatus = AlertDeliveryStatus.Pending
             };
 
             _db.Alerts.Add(alert);
             await _db.SaveChangesAsync();
+
+            // Notification payload
+            var title = $"Sentra Alert — {dto.Type} Detected";
+            var body = $"{dto.Type} detected at {camera.Name} " +
+                       $"({dto.ConfidenceScore:P0} confidence)";
+
+            var data = new Dictionary<string, string>
+            {
+                { "incidentId", incident.IncidentId.ToString() },
+                { "type",       dto.Type },
+                { "cameraId",   dto.CameraId.ToString() },
+                { "cameraName", camera.Name },
+                { "snapshot",   dto.SnapshotPath ?? "" }
+            };
+
+            // 1. Firebase → mobile push
+            if (!string.IsNullOrEmpty(camera.User.FCMToken))
+            {
+                await _notifications.SendFirebaseNotificationAsync(
+                    camera.User.FCMToken, title, body, data);
+
+                // Update alert delivery status
+                alert.DeliveryStatus = AlertDeliveryStatus.Sent;
+                alert.DeliveredAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+            }
+
+            // 2. SignalR → web app live alert
+            await _notifications.SendSignalRNotificationAsync(
+                camera.UserId, title, body, data);
 
             return Ok(new
             {
@@ -75,19 +112,16 @@ namespace Sentra.API.Controllers
             });
         }
 
-        // ==============================================
-        // GET /api/incidents
-        // Resident sees only their own incidents
-        // ==============================================
+        // GET and PATCH endpoints unchanged from before...
         [HttpGet]
         [Authorize]
         public async Task<IActionResult> GetIncidents()
         {
-            var userId = GetUserId(); // ← removed role check, always filter by owner
+            var userId = GetUserId();
 
             var incidents = await _db.Incidents
                 .Include(i => i.Camera)
-                .Where(i => i.Camera.UserId == userId) // ← always applied now
+                .Where(i => i.Camera.UserId == userId)
                 .OrderByDescending(i => i.Timestamp)
                 .Select(i => new
                 {
@@ -106,13 +140,10 @@ namespace Sentra.API.Controllers
             return Ok(incidents);
         }
 
-        // ==============================================
-        // PATCH /api/incidents/{id}/status
-        // Resident marks their own incident
-        // ==============================================
         [HttpPatch("{id}/status")]
-        [Authorize] // ← removed Admin role requirement
-        public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateIncidentStatusDto dto)
+        [Authorize]
+        public async Task<IActionResult> UpdateStatus(
+            int id, [FromBody] UpdateIncidentStatusDto dto)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
@@ -126,7 +157,6 @@ namespace Sentra.API.Controllers
             if (incident == null)
                 return NotFound(new { message = "Incident not found" });
 
-            // Only owner can update status ← added ownership check
             if (incident.Camera.UserId != userId)
                 return Forbid();
 

@@ -4,6 +4,8 @@ using Sentra.API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Sentra.API.Hubs;
+using Sentra.API.Services;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,6 +17,15 @@ builder.Services.AddDbContext<SentraDbContext>(options =>
 
 // ===== CONTROLLERS =====
 builder.Services.AddControllers();
+
+// ===== SIGNALR =====
+builder.Services.AddSignalR();
+
+// ===== NOTIFICATIONS =====
+builder.Services.AddScoped<INotificationService, NotificationService>();
+
+// ===== FIREBASE =====
+FirebaseInitializer.Initialize(builder.Configuration);
 
 // ===== JWT SERVICE =====
 builder.Services.AddScoped<IJwtService, JwtService>();
@@ -116,5 +127,7 @@ app.UseCors("AllowFrontends");
 app.UseMiddleware<Sentra.API.Middleware.ApiKeyMiddleware>(); 
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapHub<AlertHub>("/hubs/alerts");
+app.MapControllers();
 app.MapControllers();
 app.Run();
