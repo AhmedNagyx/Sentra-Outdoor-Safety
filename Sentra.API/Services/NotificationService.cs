@@ -95,5 +95,7 @@ namespace Sentra.API.Services
                     "SignalR notification failed: {Error}", ex.Message);
             }
         }
+
+       
     }
 }

@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Sentra.API.Hubs;
-using Sentra.API.Services;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -17,6 +16,9 @@ builder.Services.AddDbContext<SentraDbContext>(options =>
 
 // ===== CONTROLLERS =====
 builder.Services.AddControllers();
+
+// ===== HTTP CLIENT (for AI service calls) =====
+builder.Services.AddHttpClient();
 
 // ===== SIGNALR =====
 builder.Services.AddSignalR();
@@ -34,7 +36,7 @@ builder.Services.AddScoped<IJwtService, JwtService>();
 var jwt = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwt["SecretKey"]
     ?? throw new Exception("JwtSettings:SecretKey missing in appsettings.json");
-var key = Encoding.UTF8.GetBytes(secretKey); // use validated variable, not jwt["SecretKey"] again
+var key = Encoding.UTF8.GetBytes(secretKey);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -79,7 +81,7 @@ builder.Services.AddSwaggerGen(c =>
                 Reference = new OpenApiReference
                 {
                     Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
+                    Id   = "Bearer"
                 }
             },
             new string[] {}
@@ -96,38 +98,23 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontends", policy =>
     {
-        if (builder.Environment.IsDevelopment())
-        {
-            // Loose in development only
-            policy.AllowAnyOrigin()
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
-        }
-        else
-        {
-            // Strict in production
-            policy.WithOrigins(allowedOrigins ?? Array.Empty<string>())
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
-        }
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
 var app = builder.Build();
 
 // ===== MIDDLEWARE PIPELINE =====
-if (app.Environment.IsDevelopment() || app.Environment.IsStaging())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
+app.UseSwagger();
+app.UseSwaggerUI();
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseCors("AllowFrontends");
-app.UseMiddleware<Sentra.API.Middleware.ApiKeyMiddleware>(); 
+app.UseMiddleware<Sentra.API.Middleware.ApiKeyMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHub<AlertHub>("/hubs/alerts");
-app.MapControllers();
 app.MapControllers();
 app.Run();

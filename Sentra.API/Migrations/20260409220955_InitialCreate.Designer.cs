@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sentra.API.Data;
 
@@ -11,9 +12,11 @@ using Sentra.API.Data;
 namespace Sentra.API.Migrations
 {
     [DbContext(typeof(SentraDbContext))]
-    partial class SentraDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260409220955_InitialCreate")]
+    partial class InitialCreate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

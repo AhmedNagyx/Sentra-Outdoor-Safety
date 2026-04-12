@@ -59,4 +59,4 @@ appsettings.Development.json
 .env.staging
 
 # Firebase
-*firebase-credentials*.json
+firebase-key.json

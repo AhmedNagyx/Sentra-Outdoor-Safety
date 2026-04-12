@@ -5,7 +5,7 @@
 namespace Sentra.API.Migrations
 {
     /// <inheritdoc />
-    public partial class FixModelsAndAddRefreshTokens : Migration
+    public partial class publishing : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

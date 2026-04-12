@@ -10,14 +10,21 @@ namespace Sentra.API.Controllers
 {
     [ApiController]
     [Route("api/cameras")]
-    [Authorize] // JWT only — no role checks
+    [Authorize]
     public class CamerasController : ControllerBase
     {
         private readonly SentraDbContext _db;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IConfiguration _config;
 
-        public CamerasController(SentraDbContext db)
+        public CamerasController(
+            SentraDbContext db,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration config)
         {
             _db = db;
+            _httpClientFactory = httpClientFactory;
+            _config = config;
         }
 
         private int GetUserId() =>
@@ -25,7 +32,6 @@ namespace Sentra.API.Controllers
 
         // ==============================================
         // GET /api/cameras
-        // Resident sees only their own cameras
         // ==============================================
         [HttpGet]
         public async Task<IActionResult> GetAll()
@@ -64,7 +70,6 @@ namespace Sentra.API.Controllers
             if (camera == null)
                 return NotFound(new { message = "Camera not found" });
 
-            // Resident can only view own cameras
             if (camera.UserId != userId)
                 return Forbid();
 
@@ -82,7 +87,6 @@ namespace Sentra.API.Controllers
 
         // ==============================================
         // POST /api/cameras
-        // Resident adds their own camera
         // ==============================================
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CameraDto dto)
@@ -92,7 +96,6 @@ namespace Sentra.API.Controllers
 
             var userId = GetUserId();
 
-            // Check duplicate stream URL
             if (await _db.Cameras.AnyAsync(c => c.StreamURL == dto.StreamURL))
                 return BadRequest(new { message = "A camera with this stream URL already exists" });
 
@@ -108,6 +111,10 @@ namespace Sentra.API.Controllers
             _db.Cameras.Add(camera);
             await _db.SaveChangesAsync();
 
+            // Register camera with AI service
+            // Fire-and-forget — if AI is offline, camera is still saved in DB
+            _ = RegisterWithAiServiceAsync(camera);
+
             return CreatedAtAction(nameof(GetById),
                 new { id = camera.CameraId },
                 new
@@ -121,9 +128,35 @@ namespace Sentra.API.Controllers
                 });
         }
 
+        private async Task RegisterWithAiServiceAsync(Camera camera)
+        {
+            try
+            {
+                var aiBaseUrl = _config["AiService:BaseUrl"];
+                if (string.IsNullOrEmpty(aiBaseUrl))
+                    return; // AI service not configured — skip silently
+
+                var client = _httpClientFactory.CreateClient();
+
+                var payload = new
+                {
+                    camera_id = $"cam_{camera.CameraId}",
+                    rtsp_url = camera.StreamURL,
+                    backend_camera_id = camera.CameraId,  // integer from DB — required
+                    cooldown_seconds = 60
+                };
+
+                await client.PostAsJsonAsync($"{aiBaseUrl}/streams", payload);
+            }
+            catch
+            {
+                // AI service unreachable — log in production, ignore here
+                // Camera is already saved in DB so this is non-fatal
+            }
+        }
+
         // ==============================================
         // PATCH /api/cameras/{id}
-        // Resident updates their own camera
         // ==============================================
         [HttpPatch("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateCameraDto dto)
@@ -162,7 +195,6 @@ namespace Sentra.API.Controllers
 
         // ==============================================
         // DELETE /api/cameras/{id}
-        // Resident deletes their own camera
         // ==============================================
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
@@ -178,7 +210,6 @@ namespace Sentra.API.Controllers
             if (camera.UserId != userId)
                 return Forbid();
 
-            // Soft delete
             camera.IsDeleted = true;
             camera.Status = CameraStatus.Offline;
 

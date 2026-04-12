@@ -12,8 +12,8 @@ using Sentra.API.Data;
 namespace Sentra.API.Migrations
 {
     [DbContext(typeof(SentraDbContext))]
-    [Migration("20260317184136_FixModelsAndAddRefreshTokens")]
-    partial class FixModelsAndAddRefreshTokens
+    [Migration("20260410202637_publishing")]
+    partial class publishing
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -39,7 +39,9 @@ namespace Sentra.API.Migrations
                         .HasColumnType("nvarchar(20)");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
 
                     b.Property<DateTime?>("DeliveredAt")
                         .HasColumnType("datetime2");
@@ -78,7 +80,12 @@ namespace Sentra.API.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("CameraId"));
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
 
                     b.Property<DateTime?>("LastActiveAt")
                         .HasColumnType("datetime2");
@@ -124,8 +131,9 @@ namespace Sentra.API.Migrations
                     b.Property<int>("CameraId")
                         .HasColumnType("int");
 
-                    b.Property<double>("ConfidenceScore")
-                        .HasColumnType("float");
+                    b.Property<string>("DetectedBy")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime?>("ResolvedAt")
                         .HasColumnType("datetime2");
@@ -143,12 +151,9 @@ namespace Sentra.API.Migrations
                         .HasColumnType("nvarchar(20)");
 
                     b.Property<DateTime>("Timestamp")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
 
                     b.Property<string>("VideoClipPath")
                         .HasMaxLength(500)
@@ -160,7 +165,51 @@ namespace Sentra.API.Migrations
 
                     b.HasIndex("ResolvedByUserId");
 
+                    b.HasIndex("Status");
+
+                    b.HasIndex("Timestamp");
+
                     b.ToTable("Incidents");
+                });
+
+            modelBuilder.Entity("Sentra.API.Models.RefreshToken", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsRevoked")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RefreshTokens");
                 });
 
             modelBuilder.Entity("Sentra.API.Models.User", b =>
@@ -172,7 +221,9 @@ namespace Sentra.API.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("UserId"));
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -180,7 +231,8 @@ namespace Sentra.API.Migrations
                         .HasColumnType("nvarchar(255)");
 
                     b.Property<string>("FCMToken")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("datetime2");
@@ -207,6 +259,34 @@ namespace Sentra.API.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Sentra.API.Models.YourNamespace.Models.IncidentDetection", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<float>("ConfidenceScore")
+                        .HasColumnType("real");
+
+                    b.Property<int>("IncidentId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IncidentId");
+
+                    b.HasIndex("Type");
+
+                    b.ToTable("IncidentDetections");
                 });
 
             modelBuilder.Entity("Sentra.API.Models.Alert", b =>
@@ -257,6 +337,28 @@ namespace Sentra.API.Migrations
                     b.Navigation("ResolvedByUser");
                 });
 
+            modelBuilder.Entity("Sentra.API.Models.RefreshToken", b =>
+                {
+                    b.HasOne("Sentra.API.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Sentra.API.Models.YourNamespace.Models.IncidentDetection", b =>
+                {
+                    b.HasOne("Sentra.API.Models.Incident", "Incident")
+                        .WithMany("Detections")
+                        .HasForeignKey("IncidentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Incident");
+                });
+
             modelBuilder.Entity("Sentra.API.Models.Camera", b =>
                 {
                     b.Navigation("Incidents");
@@ -265,6 +367,8 @@ namespace Sentra.API.Migrations
             modelBuilder.Entity("Sentra.API.Models.Incident", b =>
                 {
                     b.Navigation("Alerts");
+
+                    b.Navigation("Detections");
                 });
 
             modelBuilder.Entity("Sentra.API.Models.User", b =>

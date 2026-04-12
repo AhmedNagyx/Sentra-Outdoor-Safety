@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Sentra.API.Data;
 using Sentra.API.Models;
 using Sentra.API.Models.DTOs;
+using Sentra.API.Models.YourNamespace.Models;
 using Sentra.API.Services;
 using System.Security.Claims;
 
@@ -29,6 +30,7 @@ namespace Sentra.API.Controllers
 
         // ==============================================
         // POST /api/incidents
+        // Called by AI service — one POST per detected type
         // ==============================================
         [HttpPost]
         [AllowAnonymous]
@@ -37,37 +39,66 @@ namespace Sentra.API.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            // Load camera + owner in one query
             var camera = await _db.Cameras
-                .Include(c => c.User) // need FCMToken + UserId
+                .Include(c => c.User)
                 .FirstOrDefaultAsync(c => c.CameraId == dto.CameraId);
 
             if (camera == null)
                 return NotFound(new { message = $"Camera {dto.CameraId} not found" });
 
-            // Save incident
+            // Build incident — one row per POST (one type per incident)
             var incident = new Incident
             {
                 CameraId = dto.CameraId,
-                Type = dto.Type,
-                ConfidenceScore = dto.ConfidenceScore,
                 Timestamp = dto.Timestamp,
-                SnapshotPath = dto.SnapshotPath,
-                VideoClipPath = dto.VideoClipPath,
                 DetectedBy = dto.DetectedBy,
                 Status = IncidentStatus.Pending
             };
 
+            // Single detection row for this type
+            incident.Detections.Add(new IncidentDetection
+            {
+                Type = dto.Type,
+                ConfidenceScore = dto.ConfidenceScore
+            });
+
             _db.Incidents.Add(incident);
             await _db.SaveChangesAsync();
+
+            // Save screenshot to disk if provided
+            if (!string.IsNullOrEmpty(dto.SnapshotBase64))
+            {
+                try
+                {
+                    var folder = Path.Combine("wwwroot", "snapshots");
+                    Directory.CreateDirectory(folder);
+
+                    var fileName = $"{incident.IncidentId}_{DateTime.UtcNow:yyyyMMddHHmmss}.jpg";
+                    var filePath = Path.Combine(folder, fileName);
+                    var imageBytes = Convert.FromBase64String(dto.SnapshotBase64);
+
+                    await System.IO.File.WriteAllBytesAsync(filePath, imageBytes);
+
+                    incident.SnapshotPath = $"/snapshots/{fileName}";
+                    await _db.SaveChangesAsync();
+                }
+                catch (FormatException)
+                {
+                    // Invalid base64 — skip screenshot, don't fail the whole request
+                }
+            }
+
+            // Notification content
+            var title = $"Sentra Alert — {dto.Type} Detected";
+            var body = $"{dto.Type} detected at {camera.Name} " +
+                        $"({dto.ConfidenceScore:P0} confidence)";
 
             // Save alert record
             var alert = new Alert
             {
                 IncidentId = incident.IncidentId,
                 UserId = camera.UserId,
-                Message = $"{dto.Type} detected at {camera.Name} " +
-                          $"with {dto.ConfidenceScore:P0} confidence",
+                Message = body,
                 Channel = AlertChannel.FCM,
                 DeliveryStatus = AlertDeliveryStatus.Pending
             };
@@ -75,18 +106,13 @@ namespace Sentra.API.Controllers
             _db.Alerts.Add(alert);
             await _db.SaveChangesAsync();
 
-            // Notification payload
-            var title = $"Sentra Alert — {dto.Type} Detected";
-            var body = $"{dto.Type} detected at {camera.Name} " +
-                       $"({dto.ConfidenceScore:P0} confidence)";
-
             var data = new Dictionary<string, string>
             {
                 { "incidentId", incident.IncidentId.ToString() },
                 { "type",       dto.Type },
                 { "cameraId",   dto.CameraId.ToString() },
                 { "cameraName", camera.Name },
-                { "snapshot",   dto.SnapshotPath ?? "" }
+                { "snapshot",   incident.SnapshotPath ?? "" }
             };
 
             // 1. Firebase → mobile push
@@ -95,7 +121,6 @@ namespace Sentra.API.Controllers
                 await _notifications.SendFirebaseNotificationAsync(
                     camera.User.FCMToken, title, body, data);
 
-                // Update alert delivery status
                 alert.DeliveryStatus = AlertDeliveryStatus.Sent;
                 alert.DeliveredAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
@@ -112,7 +137,9 @@ namespace Sentra.API.Controllers
             });
         }
 
-        // GET and PATCH endpoints unchanged from before...
+        // ==============================================
+        // GET /api/incidents
+        // ==============================================
         [HttpGet]
         [Authorize]
         public async Task<IActionResult> GetIncidents()
@@ -121,18 +148,20 @@ namespace Sentra.API.Controllers
 
             var incidents = await _db.Incidents
                 .Include(i => i.Camera)
+                .Include(i => i.Detections)
                 .Where(i => i.Camera.UserId == userId)
                 .OrderByDescending(i => i.Timestamp)
                 .Select(i => new
                 {
                     i.IncidentId,
-                    i.Type,
-                    i.ConfidenceScore,
                     i.Timestamp,
                     i.Status,
                     i.SnapshotPath,
                     i.VideoClipPath,
                     i.DetectedBy,
+                    // Each incident has one detection but kept as list for consistency
+                    type = i.Detections.Select(d => d.Type).FirstOrDefault(),
+                    confidenceScore = i.Detections.Select(d => d.ConfidenceScore).FirstOrDefault(),
                     Camera = new { i.Camera.CameraId, i.Camera.Name, i.Camera.Location }
                 })
                 .ToListAsync();
@@ -140,6 +169,40 @@ namespace Sentra.API.Controllers
             return Ok(incidents);
         }
 
+        // ==============================================
+        // GET /api/incidents/{id}/snapshot
+        // ==============================================
+        [HttpGet("{id}/snapshot")]
+        [Authorize]
+        public async Task<IActionResult> GetSnapshot(int id)
+        {
+            var userId = GetUserId();
+
+            var incident = await _db.Incidents
+                .Include(i => i.Camera)
+                .FirstOrDefaultAsync(i => i.IncidentId == id);
+
+            if (incident == null)
+                return NotFound(new { message = "Incident not found" });
+
+            if (incident.Camera.UserId != userId)
+                return Forbid();
+
+            if (string.IsNullOrEmpty(incident.SnapshotPath))
+                return NotFound(new { message = "No snapshot available for this incident" });
+
+            var filePath = Path.Combine("wwwroot", incident.SnapshotPath.TrimStart('/'));
+
+            if (!System.IO.File.Exists(filePath))
+                return NotFound(new { message = "Snapshot file not found on disk" });
+
+            var imageBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+            return File(imageBytes, "image/jpeg");
+        }
+
+        // ==============================================
+        // PATCH /api/incidents/{id}/status
+        // ==============================================
         [HttpPatch("{id}/status")]
         [Authorize]
         public async Task<IActionResult> UpdateStatus(

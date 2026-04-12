@@ -12,31 +12,31 @@
 
         public async Task InvokeAsync(HttpContext context, IConfiguration config)
         {
-            // Only protect AI endpoints
-            if (context.Request.Path.StartsWithSegments("/api/incidents") ||
-                (context.Request.Path.StartsWithSegments("/api/cameras") &&
-                 context.Request.Path.Value!.EndsWith("/heartbeat")))
+            var path = context.Request.Path;
+            var method = context.Request.Method;
+
+            // Only protect AI-facing endpoints
+            var isIncidentPost = path.StartsWithSegments("/api/incidents")
+                                 && method == HttpMethods.Post;
+
+            var isHeartbeat = path.StartsWithSegments("/api/cameras")
+                              && path.Value!.EndsWith("/heartbeat")
+                              && method == HttpMethods.Patch;
+
+            if (isIncidentPost || isHeartbeat)
             {
-                // Check header exists
                 if (!context.Request.Headers.TryGetValue(API_KEY_HEADER, out var extractedKey))
                 {
                     context.Response.StatusCode = 401;
-                    await context.Response.WriteAsJsonAsync(new
-                    {
-                        message = "API Key missing"
-                    });
+                    await context.Response.WriteAsJsonAsync(new { message = "API Key missing" });
                     return;
                 }
 
-                // Validate key
                 var validKey = config["ApiKeys:AiModelKey"];
                 if (string.IsNullOrEmpty(validKey) || extractedKey != validKey)
                 {
                     context.Response.StatusCode = 401;
-                    await context.Response.WriteAsJsonAsync(new
-                    {
-                        message = "Invalid API Key"
-                    });
+                    await context.Response.WriteAsJsonAsync(new { message = "Invalid API Key" });
                     return;
                 }
             }

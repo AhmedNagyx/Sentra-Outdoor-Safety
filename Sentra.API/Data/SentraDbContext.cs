@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Sentra.API.Models;
+using Sentra.API.Models.YourNamespace.Models;
 
 namespace Sentra.API.Data
 {
@@ -13,6 +14,7 @@ namespace Sentra.API.Data
         public DbSet<Incident> Incidents { get; set; }
         public DbSet<Alert> Alerts { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
+        public DbSet<IncidentDetection> IncidentDetections => Set<IncidentDetection>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -49,19 +51,26 @@ namespace Sentra.API.Data
                       .WithMany(c => c.Incidents)
                       .HasForeignKey(i => i.CameraId)
                       .OnDelete(DeleteBehavior.Cascade);
-
                 entity.HasOne(i => i.ResolvedByUser)
                       .WithMany()
                       .HasForeignKey(i => i.ResolvedByUserId)
                       .OnDelete(DeleteBehavior.NoAction);
-
                 entity.Property(i => i.Timestamp)
                       .HasDefaultValueSql("GETUTCDATE()");
-
-                // Indexes for dashboard queries
                 entity.HasIndex(i => i.Timestamp);
-                entity.HasIndex(i => i.Type);
                 entity.HasIndex(i => i.Status);
+                // No query filter here — Camera's filter handles soft delete at that level
+            });
+
+            // ===== INCIDENT DETECTIONS =====
+            modelBuilder.Entity<IncidentDetection>(entity =>
+            {
+                entity.HasOne(d => d.Incident)
+                      .WithMany(i => i.Detections)
+                      .HasForeignKey(d => d.IncidentId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasIndex(d => d.IncidentId);
+                entity.HasIndex(d => d.Type);
             });
 
             // ===== ALERT =====
@@ -94,6 +103,7 @@ namespace Sentra.API.Data
 
                 entity.HasIndex(r => r.Token).IsUnique();
             });
+
         }
     }
 }
