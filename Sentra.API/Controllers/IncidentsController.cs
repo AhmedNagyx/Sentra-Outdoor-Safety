@@ -46,7 +46,6 @@ namespace Sentra.API.Controllers
             if (camera == null)
                 return NotFound(new { message = $"Camera {dto.CameraId} not found" });
 
-            // Build incident — one row per POST (one type per incident)
             var incident = new Incident
             {
                 CameraId = dto.CameraId,
@@ -55,7 +54,6 @@ namespace Sentra.API.Controllers
                 Status = IncidentStatus.Pending
             };
 
-            // Single detection row for this type
             incident.Detections.Add(new IncidentDetection
             {
                 Type = dto.Type,
@@ -116,6 +114,7 @@ namespace Sentra.API.Controllers
             };
 
             // 1. Firebase → mobile push
+            bool isNotificationSent = false;
             if (!string.IsNullOrEmpty(camera.User.FCMToken))
             {
                 await _notifications.SendFirebaseNotificationAsync(
@@ -124,6 +123,7 @@ namespace Sentra.API.Controllers
                 alert.DeliveryStatus = AlertDeliveryStatus.Sent;
                 alert.DeliveredAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
+                isNotificationSent = true;
             }
 
             // 2. SignalR → web app live alert
@@ -133,7 +133,10 @@ namespace Sentra.API.Controllers
             return Ok(new
             {
                 message = "Incident reported successfully",
-                incidentId = incident.IncidentId
+                incidentId = incident.IncidentId,
+                firebaseStatus = isNotificationSent
+                    ? "Sent"
+                    : "Failed: FCM Token is NULL or Empty for this user!"
             });
         }
 
@@ -159,7 +162,6 @@ namespace Sentra.API.Controllers
                     i.SnapshotPath,
                     i.VideoClipPath,
                     i.DetectedBy,
-                    // Each incident has one detection but kept as list for consistency
                     type = i.Detections.Select(d => d.Type).FirstOrDefault(),
                     confidenceScore = i.Detections.Select(d => d.ConfidenceScore).FirstOrDefault(),
                     Camera = new { i.Camera.CameraId, i.Camera.Name, i.Camera.Location }

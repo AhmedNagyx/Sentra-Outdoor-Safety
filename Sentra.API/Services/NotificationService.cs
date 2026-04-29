@@ -23,13 +23,16 @@ namespace Sentra.API.Services
         // FIREBASE — sends push to mobile
         // ==============================================
         public async Task SendFirebaseNotificationAsync(
-            string fcmToken,
-            string title,
-            string body,
-            object data)
+    string fcmToken,
+    string title,
+    string body,
+    object data)
         {
             try
             {
+                _logger.LogInformation("Attempting Firebase notification to token: {Token}",
+                    fcmToken.Substring(0, Math.Min(20, fcmToken.Length)) + "...");
+
                 var message = new Message
                 {
                     Token = fcmToken,
@@ -42,7 +45,7 @@ namespace Sentra.API.Services
                         ?? new Dictionary<string, string>(),
                     Android = new AndroidConfig
                     {
-                        Priority = Priority.High, // wake device even in standby
+                        Priority = Priority.High,
                         Notification = new AndroidNotification
                         {
                             Sound = "default",
@@ -54,14 +57,12 @@ namespace Sentra.API.Services
                 var response = await FirebaseMessaging.DefaultInstance
                     .SendAsync(message);
 
-                _logger.LogInformation(
-                    "Firebase notification sent. MessageId: {MessageId}", response);
+                _logger.LogInformation("Firebase notification sent successfully. MessageId: {MessageId}", response);
             }
             catch (Exception ex)
             {
-                _logger.LogError(
-                    "Firebase notification failed: {Error}", ex.Message);
-                // Don't throw — notification failure should not fail the incident report
+                _logger.LogError("Firebase notification failed. Token: {Token}, Error: {Error}, StackTrace: {Stack}",
+                    fcmToken, ex.Message, ex.StackTrace);
             }
         }
 
